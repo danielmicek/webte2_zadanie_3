@@ -4,7 +4,7 @@ export default function PlayerList({ players, playerId }) {
     return (
         <div className="grid gap-3">
             {players.map((player) => (
-                <div key={player.sessionId} className="rounded-[22px] border border-slate-800 bg-slate-950/70 p-4">
+                <div key={player.sessionId} className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <p className="text-lg font-semibold text-slate-50">

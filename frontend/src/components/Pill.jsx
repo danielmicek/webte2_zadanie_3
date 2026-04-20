@@ -8,7 +8,7 @@ export default function Pill({ children, tone = 'neutral' }) {
     }
 
     return (
-        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${tones[tone]}`}>
+        <span className={`inline-flex rounded-lg border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${tones[tone]}`}>
             {children}
         </span>
     )

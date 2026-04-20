@@ -1,3 +1,5 @@
+import config from "./config/game-config.json"
+
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max)
 }
@@ -12,7 +14,7 @@ function requirePositiveNumber(value, label) {
     return numeric
 }
 
-export function sanitizeGameConfig(config) {
+export function sanitizeGameConfig() {
     const boardWidth = requirePositiveNumber(config?.board?.width, 'board.width')
     const boardHeight = requirePositiveNumber(config?.board?.height, 'board.height')
     const targetX = requirePositiveNumber(config?.target?.x, 'target.x')

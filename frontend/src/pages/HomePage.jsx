@@ -18,7 +18,7 @@ export default function HomePage() {
                         Pripoj sa a čakaj na štart od lobby-leadera
                     </h1>
 
-                    <div className="mt-6 rounded-[24px] border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
+                    <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
                         {notice}
                     </div>
 
@@ -36,7 +36,7 @@ export default function HomePage() {
                                 onChange={(event) => setNicknameInput(event.target.value)}
                                 placeholder="napr. Player1"
                                 maxLength={24}
-                                className="w-full rounded-[20px] border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-50 outline-none transition focus:border-lime-300"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-50 outline-none transition focus:border-lime-300"
                             />
                         </div>
                         <div className="grid gap-3 md:grid-cols-2">

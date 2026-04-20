@@ -37,12 +37,12 @@ export default function LobbyPage() {
                     </div>
 
                     <div className="mt-8 flex gap-4">
-                        <div className="rounded-[24px] border border-slate-800 bg-slate-900/70 p-4">
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
                             <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Pripojení hráči</p>
                             <p className="mt-3 text-4xl font-semibold text-slate-50">{connectedPlayers}</p>
                         </div>
 
-                        <div className="rounded-[24px] border border-slate-800 bg-slate-900/70 p-4">
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
                             <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Tvoja rola</p>
                             <p className="mt-3 text-xl font-semibold text-slate-50">
                                 {playerId === leaderId ? 'Leader' : 'Player'}
@@ -51,12 +51,12 @@ export default function LobbyPage() {
                         </div>
                     </div>
 
-                    <div className="mt-6 rounded-[24px] border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
+                    <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
                         {notice}
                     </div>
 
                     {connectedPlayers > 2 ? (
-                        <div className="mt-6 rounded-[24px] border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
+                        <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
                             Na hru sú potrební dvaja hráči, momentálne nie je možné začať hru.
                         </div>
                     ) : null}

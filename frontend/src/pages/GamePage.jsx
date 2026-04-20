@@ -35,8 +35,22 @@ export default function GamePage() {
 
     return (
         <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#163252_0%,#08111d_36%,#050816_100%)]">
-            <div className="absolute left-4 right-4 top-4 z-20 flex flex-wrap items-start justify-between gap-4">
-                <div className="max-w-md rounded-[28px] border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
+            <div className="flex min-h-screen items-center justify-center px-3 pb-3">
+                <div className="flex h-screen w-full items-center justify-center">
+                    <GameCanvas
+                        playerId={playerId}
+                        isMyTurn={isMyTurn}
+                        canShoot={canShoot}
+                        game={game}
+                        shotEvent={shotEvent}
+                        onShoot={(vector) => sendMessage({ type: 'shoot', vector })}
+                        onSettled={(shotId, stones) => sendMessage({ type: 'shot_settled', shotId, stones })}
+                    />
+                </div>
+            </div>
+
+            <div className="lg:absolute relative lg:left-4 lg:right-4 lg:top-4 z-20 my-5 lg:my-0 flex flex-col lg:flex-row items-center justify-between gap-4">
+                <div className="lg:w-[30%] w-[300px] min-w- rounded-lg border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
                     <div className="flex items-center justify-between gap-3">
                         <div>
                             <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Stav hry</p>
@@ -50,13 +64,13 @@ export default function GamePage() {
                     </div>
 
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-[20px] border border-slate-800 bg-slate-900/70 p-4">
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
                             <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Ťah</p>
                             <p className="mt-2 text-lg font-semibold text-slate-50">
                                 {isMyTurn ? 'Tvoj ťah' : players.find((player) => player.playerId === game?.turnPlayerId)?.nickname ?? 'Čaká sa'}
                             </p>
                         </div>
-                        <div className="rounded-[20px] border border-slate-800 bg-slate-900/70 p-4">
+                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
                             <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Počet kameňov</p>
                             <p className="mt-2 text-lg font-semibold text-slate-50">
                                 {shotsTaken}/{game?.shotsPerPlayer ?? 0}
@@ -64,18 +78,19 @@ export default function GamePage() {
                         </div>
                     </div>
 
-                    <div className="mt-4 rounded-[20px] border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
+                    <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
                         {notice}
                     </div>
 
                     {game?.paused ? (
-                        <div className="mt-4 rounded-[20px] border border-orange-400/20 bg-orange-400/10 p-4 text-sm text-orange-50">
+                        <div className="mt-4 rounded-lg border border-orange-400/20 bg-orange-400/10 p-4 text-sm text-orange-50">
                             {pausedBy ? `Hru pozastavil ${pausedBy.nickname}.` : 'Hra je pozastavená.'}
                         </div>
                     ) : null}
                 </div>
 
-                <div className="max-w-md rounded-[28px] border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
+                <div className="lg:w-[30%] w-[300px] rounded-lg border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
+                    <p className="text-xs uppercase tracking-[0.28em] mb-3 text-slate-400">Možnosti hry</p>
                     <div className="grid gap-3 sm:grid-cols-2">
                         <MenuButton type="button" variant="secondary" onClick={() => sendMessage({ type: 'toggle_pause' })} disabled={game?.status !== 'running'}>
                             {game?.paused ? 'Zrušiť pauzu' : 'Pauza'}
@@ -91,7 +106,7 @@ export default function GamePage() {
                         </MenuButton>
                     </div>
 
-                    <div className="mt-4 rounded-[20px] border border-slate-800 bg-slate-900/60 p-4">
+                    <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
                         <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Reštart</p>
                         <p className="mt-2 text-sm text-slate-300">
                             Navrhnutý: {restartVotes.length}/{game?.activePlayerIds?.length ?? 0}
@@ -101,20 +116,6 @@ export default function GamePage() {
                     <div className="mt-4">
                         <ResultPanel result={game?.result} players={players} />
                     </div>
-                </div>
-            </div>
-
-            <div className="flex min-h-screen items-center justify-center px-3 py-3">
-                <div className="flex h-screen w-full items-center justify-center">
-                    <GameCanvas
-                        playerId={playerId}
-                        isMyTurn={isMyTurn}
-                        canShoot={canShoot}
-                        game={game}
-                        shotEvent={shotEvent}
-                        onShoot={(vector) => sendMessage({ type: 'shoot', vector })}
-                        onSettled={(shotId, stones) => sendMessage({ type: 'shot_settled', shotId, stones })}
-                    />
                 </div>
             </div>
         </div>

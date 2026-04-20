@@ -8,7 +8,7 @@ export default function MenuButton({ children, variant = 'primary', className = 
     return (
         <button
             {...props}
-            className={`rounded-[20px] border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
+            className={`rounded-lg border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
         >
             {children}
         </button>

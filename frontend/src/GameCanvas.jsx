@@ -509,7 +509,7 @@ export default function GameCanvas({
     if (loadError) {
         return (
             <div className="flex items-center justify-center p-4">
-                <div className="rounded-2xl border border-red-400/50 bg-red-950/60 px-6 py-4 text-sm text-red-100">
+                <div className="rounded-lg border border-red-400/50 bg-red-950/60 px-6 py-4 text-sm text-red-100">
                     {loadError}
                 </div>
             </div>
