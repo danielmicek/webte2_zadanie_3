@@ -1,8 +1,11 @@
-const fs = require('fs')
-const path = require('path')
-const WebSocket = require('ws')
+import fs from 'fs'
+import path from 'path'
+import {fileURLToPath} from 'url'
+import WebSocket, {WebSocketServer} from 'ws'
 
 const PORT = Number(process.env.PORT) || 3000
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'frontend', 'src', 'config', 'game-config.json')
 
 function readPositiveNumber(value, label) {
@@ -15,6 +18,7 @@ function readPositiveNumber(value, label) {
     return numeric
 }
 
+// need it on the backend as well for stones count, distance from target and restart logic
 function loadGameConfig() {
     try {
         const raw = fs.readFileSync(CONFIG_PATH, 'utf8')
@@ -39,7 +43,7 @@ function loadGameConfig() {
 }
 
 const config = loadGameConfig()
-const wss = new WebSocket.Server({ port: PORT })
+const wss = new WebSocketServer({ port: PORT })
 
 let nextPlayerId = 1
 let nextGameId = 1
@@ -48,12 +52,12 @@ const players = []
 const game = {
     status: 'lobby',
     gameId: null,
-    activePlayerIds: [],
+    playersIds: [],
     turnPlayerId: null,
     currentShot: null,
     paused: false,
     pausedByPlayerId: null,
-    pauseReason: '',
+    pauseComment: '',
     shotsPerPlayer: config.stonesPerPlayer,
     shotsTaken: {},
     settleReports: {},
@@ -61,12 +65,14 @@ const game = {
     result: null,
 }
 
+//send message to one client
 function send(ws, payload) {
     if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(payload))
     }
 }
 
+// send message to all the clients
 function broadcast(payload) {
     const message = JSON.stringify(payload)
 
@@ -82,7 +88,7 @@ function sendError(ws, message) {
 }
 
 function getLeader() {
-    return players[0] ?? null
+    return players[0] ?? null // the first in the array, because leader is who connects first to the server
 }
 
 function getLeaderId() {
@@ -93,13 +99,9 @@ function getPlayerById(playerId) {
     return players.find((player) => player.playerId === playerId) ?? null
 }
 
-function getActivePlayers() {
-    return players.slice(0, 2)
-}
-
 function createSnapshot() {
     const leader = getLeader()
-    const activeIds = new Set(game.activePlayerIds)
+    const activeIds = new Set(game.playersIds)
 
     return {
         type: 'snapshot',
@@ -108,31 +110,28 @@ function createSnapshot() {
             leaderId: leader?.playerId ?? null,
             leaderName: leader?.nickname ?? null,
             players: players.map((player) => ({
-                sessionId: player.playerId,
                 playerId: player.playerId,
                 nickname: player.nickname,
                 isLeader: player.playerId === leader?.playerId,
                 isConnected: true,
                 isActivePlayer: activeIds.has(player.playerId),
-                joinedAt: player.joinedAt,
             })),
         },
         game: {
-            status: game.status,
+            status: game.status, // lobby, running, finished
             gameId: game.gameId,
-            activePlayerIds: game.activePlayerIds,
+            playersIds: game.playersIds,
             turnPlayerId: game.turnPlayerId,
-            currentShot: game.currentShot,
+            currentShot: game.currentShot, // if the shot is currently ongoing
             paused: game.paused,
             pausedByPlayerId: game.pausedByPlayerId,
-            pauseReason: game.pauseReason,
+            pauseComment: game.pauseComment,
             shotsPerPlayer: game.shotsPerPlayer,
             shotsTaken: game.shotsTaken,
             restartVotes: game.restartVotes,
             result: game.result,
         },
-        config,
-        serverTime: Date.now(),
+        config
     }
 }
 
@@ -140,6 +139,7 @@ function broadcastSnapshot() {
     broadcast(createSnapshot())
 }
 
+// notice user about actions, such as: User Player1 connected to the server
 function broadcastNotice(message, tone = 'info') {
     broadcast({ type: 'notice', message, tone })
 }
@@ -147,12 +147,12 @@ function broadcastNotice(message, tone = 'info') {
 function resetGameState() {
     game.status = 'lobby'
     game.gameId = null
-    game.activePlayerIds = []
+    game.playersIds = []
     game.turnPlayerId = null
     game.currentShot = null
     game.paused = false
     game.pausedByPlayerId = null
-    game.pauseReason = ''
+    game.pauseComment = ''
     game.shotsPerPlayer = config.stonesPerPlayer
     game.shotsTaken = {}
     game.settleReports = {}
@@ -161,18 +161,17 @@ function resetGameState() {
 }
 
 function startGame() {
-    const activePlayers = getActivePlayers()
 
     game.status = 'running'
     game.gameId = nextGameId++
-    game.activePlayerIds = activePlayers.map((player) => player.playerId)
-    game.turnPlayerId = game.activePlayerIds[0] ?? null
+    game.playersIds = players.map((player) => player.playerId)
+    game.turnPlayerId = game.playersIds[0] ?? null
     game.currentShot = null
     game.paused = false
     game.pausedByPlayerId = null
-    game.pauseReason = ''
+    game.pauseComment = ''
     game.shotsPerPlayer = config.stonesPerPlayer
-    game.shotsTaken = Object.fromEntries(game.activePlayerIds.map((playerId) => [playerId, 0]))
+    game.shotsTaken = Object.fromEntries(game.playersIds.map((playerId) => [playerId, 0]))
     game.settleReports = {}
     game.restartVotes = []
     game.result = null
@@ -183,7 +182,7 @@ function finishGame(result) {
     game.currentShot = null
     game.paused = false
     game.pausedByPlayerId = null
-    game.pauseReason = ''
+    game.pauseComment = ''
     game.restartVotes = []
     game.settleReports = {}
     game.result = result
@@ -193,7 +192,7 @@ function buildScoreResult(stones) {
     const ranked = stones
         .map((stone) => ({
             ...stone,
-            distance: Math.hypot(stone.x - config.target.x, stone.y - config.target.y),
+            distance: Math.hypot(stone.x - config.target.x, stone.y - config.target.y), // distance of the stone from the center
         }))
         .sort((a, b) => a.distance - b.distance)
 
@@ -222,10 +221,10 @@ function finalizeCurrentShot() {
     const firstReport = Object.values(reports)[0]
     const stones = firstReport?.stones ?? []
     const totalShots = Object.values(game.shotsTaken).reduce((sum, count) => sum + count, 0)
-    const maxShots = game.activePlayerIds.length * game.shotsPerPlayer
+    const maxShots = game.playersIds.length * game.shotsPerPlayer
 
-    game.currentShot = null
-    delete game.settleReports[shotId]
+    game.currentShot = null  // current shot is not ongoing anymore
+    game.settleReports = {}
 
     if (totalShots >= maxShots) {
         finishGame(buildScoreResult(stones))
@@ -233,9 +232,10 @@ function finalizeCurrentShot() {
         return
     }
 
-    const currentTurnIndex = game.activePlayerIds.indexOf(game.turnPlayerId)
-    const nextTurnIndex = currentTurnIndex === -1 ? 0 : (currentTurnIndex + 1) % game.activePlayerIds.length
-    game.turnPlayerId = game.activePlayerIds[nextTurnIndex] ?? null
+    // change the turn of the player
+    const currentTurnIndex = game.playersIds.indexOf(game.turnPlayerId)
+    const nextTurnIndex = currentTurnIndex === 0 ? 1 : 0
+    game.turnPlayerId = game.playersIds[nextTurnIndex] ?? null
     game.restartVotes = []
     broadcastSnapshot()
 }
@@ -303,7 +303,8 @@ function removePlayer(player, noticeMessage) {
 
     players.splice(index, 1)
 
-    if (game.activePlayerIds.includes(player.playerId) && game.status !== 'lobby') {
+    // finnish game when a player disconnects from the server/leave the game
+    if (game.playersIds.includes(player.playerId) && game.status !== 'lobby') {
         finishGame({
             type: 'disconnect',
             winnerPlayerId: null,
@@ -350,7 +351,6 @@ wss.on('connection', (ws) => {
             const player = {
                 playerId: nextPlayerId++,
                 nickname,
-                joinedAt: Date.now(),
                 ws,
             }
 
@@ -390,7 +390,7 @@ wss.on('connection', (ws) => {
                 return
             }
 
-            if (players.length < 2) {
+            if (players.length !== 2) {
                 sendError(ws, 'Na spustenie hry musia byť pripojení práve dvaja hráči.')
                 return
             }
@@ -414,7 +414,7 @@ wss.on('connection', (ws) => {
         }
 
         if (message.type === 'toggle_pause') {
-            if (!game.activePlayerIds.includes(player.playerId)) {
+            if (!game.playersIds.includes(player.playerId)) {
                 sendError(ws, 'Pauzu môže meniť iba aktívny hráč.')
                 return
             }
@@ -426,17 +426,17 @@ wss.on('connection', (ws) => {
 
             game.paused = !game.paused
             game.pausedByPlayerId = game.paused ? player.playerId : null
-            game.pauseReason = game.paused
+            game.pauseComment = game.paused
                 ? `Hru pozastavil ${player.nickname}.`
                 : `${player.nickname} obnovil hru.`
 
-            broadcastNotice(game.pauseReason, game.paused ? 'warning' : 'success')
+            broadcastNotice(game.pauseComment, game.paused ? 'warning' : 'success')
             broadcastSnapshot()
             return
         }
 
         if (message.type === 'request_restart') {
-            if (!game.activePlayerIds.includes(player.playerId)) {
+            if (!game.playersIds.includes(player.playerId)) {
                 sendError(ws, 'Reštart môžu potvrdiť iba aktívni hráči.')
                 return
             }
@@ -450,7 +450,7 @@ wss.on('connection', (ws) => {
                 game.restartVotes.push(player.playerId)
             }
 
-            if (game.activePlayerIds.every((playerId) => game.restartVotes.includes(playerId))) {
+            if (game.playersIds.every((playerId) => game.restartVotes.includes(playerId))) {
                 startGame()
                 broadcastNotice('Spúšťa sa nová hra.', 'success')
             } else {
@@ -500,8 +500,7 @@ wss.on('connection', (ws) => {
                 nickname: player.nickname,
                 stoneId: `${player.playerId}-${shotNumber}`,
                 shotNumber,
-                vector,
-                createdAt: Date.now(),
+                vector
             }
 
             game.shotsTaken[player.playerId] = shotNumber
@@ -519,7 +518,7 @@ wss.on('connection', (ws) => {
                 return
             }
 
-            if (!game.activePlayerIds.includes(player.playerId)) {
+            if (!game.playersIds.includes(player.playerId)) {
                 sendError(ws, 'Report môžu poslať iba aktívni hráči.')
                 return
             }
@@ -535,8 +534,9 @@ wss.on('connection', (ws) => {
                 stones,
             }
 
-            if (
-                game.activePlayerIds.every(
+            if ( // if both players sent a report of the current game state (the element in settleReport),
+                // we can finalize the current shot and begin the other
+                game.playersIds.every(
                     (playerId) => Boolean(game.settleReports[game.currentShot.shotId][playerId]),
                 )
             ) {

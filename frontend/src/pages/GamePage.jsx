@@ -6,13 +6,13 @@ import ResultPanel from '../components/ResultPanel.jsx'
 
 export default function GamePage() {
     const context = useOutletContext()
-    const { snapshot, playerId, notice, shotEvent, sendMessage, handleDisconnect, isActivePlayer } = context
+    const { snapshot, playerId, notice, shotEvent, sendMessage, handleDisconnect, isGamePlayer } = context
 
     if (!playerId) {
         return <Navigate to="/" replace />
     }
 
-    if (!isActivePlayer) {
+    if (!isGamePlayer) {
         return <Navigate to="/lobby" replace />
     }
 
@@ -50,7 +50,7 @@ export default function GamePage() {
             </div>
 
             <div className="lg:absolute relative lg:left-4 lg:right-4 lg:top-4 z-20 my-5 lg:my-0 flex flex-col lg:flex-row items-center justify-between gap-4">
-                <div className="lg:w-[30%] w-[300px] min-w- rounded-lg border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
+                <div className="lg:w-[25%] w-[300px] min-w- rounded-lg border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
                     <div className="flex items-center justify-between gap-3">
                         <div>
                             <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Stav hry</p>
@@ -89,7 +89,7 @@ export default function GamePage() {
                     ) : null}
                 </div>
 
-                <div className="lg:w-[30%] w-[300px] rounded-lg border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
+                <div className="lg:w-[25%] w-[300px] rounded-lg border border-slate-800 bg-slate-950/82 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.38)] backdrop-blur">
                     <p className="text-xs uppercase tracking-[0.28em] mb-3 text-slate-400">Možnosti hry</p>
                     <div className="grid gap-3 sm:grid-cols-2">
                         <MenuButton type="button" variant="secondary" onClick={() => sendMessage({ type: 'toggle_pause' })} disabled={game?.status !== 'running'}>
@@ -109,7 +109,7 @@ export default function GamePage() {
                     <div className="mt-4 rounded-lg border border-slate-800 bg-slate-900/60 p-4">
                         <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Reštart</p>
                         <p className="mt-2 text-sm text-slate-300">
-                            Navrhnutý: {restartVotes.length}/{game?.activePlayerIds?.length ?? 0}
+                            Navrhnutý: {restartVotes.length}/{game?.playersIds?.length ?? 0}
                         </p>
                     </div>
 

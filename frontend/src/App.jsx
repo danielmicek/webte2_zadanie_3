@@ -28,8 +28,7 @@ export function AppLayout() {
 
     const playerId = session?.playerId ?? null
     const nickname = session?.nickname ?? ''
-    const me = snapshot?.lobby?.players?.find((player) => player.playerId === playerId) ?? null
-    const isActivePlayer = Boolean(me?.isActivePlayer)
+    const isGamePlayer = Boolean(playerId && snapshot?.game?.playersIds?.includes(playerId))
 
     function closeSocket() {
         if (socketRef.current) {
@@ -199,7 +198,7 @@ export function AppLayout() {
             return
         }
 
-        if (snapshot?.game?.status && snapshot.game.status !== 'lobby' && isActivePlayer) {
+        if (snapshot?.game?.status && snapshot.game.status !== 'lobby' && isGamePlayer) {
             if (location.pathname !== '/game') {
                 navigate('/game')
             }
@@ -209,7 +208,7 @@ export function AppLayout() {
         if (location.pathname !== '/lobby') {
             navigate('/lobby')
         }
-    }, [session, snapshot, isActivePlayer, navigate, location.pathname])
+    }, [session, snapshot, isGamePlayer, navigate, location.pathname])
 
     const pageContext = {
         snapshot,
@@ -222,7 +221,7 @@ export function AppLayout() {
         nicknameInput,
         setNicknameInput,
         connecting: socketState === WS_STATE.CONNECTING,
-        isActivePlayer,
+        isGamePlayer,
         shotEvent,
         handleConnect,
         handleDisconnect,

@@ -372,7 +372,7 @@ export default function GameCanvas({
         ctx.stroke()
 
         if (canShoot) {
-            const meIndex = game.activePlayerIds.indexOf(playerId)
+            const meIndex = game.playersIds.indexOf(playerId)
             drawCircle(
                 ctx,
                 config.launchPosition.x,
@@ -395,7 +395,7 @@ export default function GameCanvas({
         }
 
         for (const body of stoneBodiesRef.current.values()) {
-            const ownerIndex = game.activePlayerIds.indexOf(body.plugin?.ownerPlayerId)
+            const ownerIndex = game.playersIds.indexOf(body.plugin?.ownerPlayerId)
             drawCircle(ctx, body.position.x, body.position.y, body.circleRadius, PLAYER_COLORS[ownerIndex] ?? '#94a3b8')
             drawCircle(ctx, body.position.x, body.position.y, body.circleRadius * 0.42, 'rgba(255,255,255,0.85)')
 

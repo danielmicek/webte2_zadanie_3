@@ -85,7 +85,7 @@ export default function LobbyPage() {
                     </div>
                 </div>
                 <div className="mt-5">
-                    <PlayerList players={players} playerId={playerId} />
+                    <PlayerList players={players} playerId={playerId} gameStatus={snapshot?.game?.status} />
                 </div>
             </Card>
         </div>
