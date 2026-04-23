@@ -1,5 +1,3 @@
-import config from "./config/game-config.json"
-
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max)
 }
@@ -14,7 +12,7 @@ function requirePositiveNumber(value, label) {
     return numeric
 }
 
-export function sanitizeGameConfig() {
+export function sanitizeGameConfig(config) {
     const boardWidth = requirePositiveNumber(config?.board?.width, 'board.width')
     const boardHeight = requirePositiveNumber(config?.board?.height, 'board.height')
     const targetX = requirePositiveNumber(config?.target?.x, 'target.x')
@@ -56,3 +54,15 @@ export function sanitizeGameConfig() {
     }
 }
 
+export async function loadGameConfig() {
+    const response = await fetch('/game-config.json', {
+        cache: 'no-store',
+    })
+
+    if (!response.ok) {
+        throw new Error(`Nepodarilo sa nacitat game-config.json. HTTP ${response.status}.`)
+    }
+
+    const config = await response.json()
+    return sanitizeGameConfig(config)
+}

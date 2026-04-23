@@ -1,12 +1,8 @@
 import fs from 'fs'
-import path from 'path'
-import {fileURLToPath} from 'url'
 import WebSocket, {WebSocketServer} from 'ws'
 
 const PORT = Number(process.env.PORT) || 3000
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const CONFIG_PATH = path.resolve(__dirname, '..', '..', 'frontend', 'src', 'config', 'game-config.json')
+const CONFIG_PATH = '/home/xmicek/curling-game-config/game-config.json'
 
 function readPositiveNumber(value, label) {
     const numeric = Number(value)

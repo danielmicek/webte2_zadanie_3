@@ -6,14 +6,10 @@ import ResultPanel from '../components/ResultPanel.jsx'
 
 export default function GamePage() {
     const context = useOutletContext()
-    const { snapshot, playerId, notice, shotEvent, sendMessage, handleDisconnect, isGamePlayer } = context
+    const { snapshot, playerId, notice, shotEvent, sendMessage, handleDisconnect } = context
 
     if (!playerId) {
         return <Navigate to="/" replace />
-    }
-
-    if (!isGamePlayer) {
-        return <Navigate to="/lobby" replace />
     }
 
     const players = snapshot?.lobby?.players ?? []

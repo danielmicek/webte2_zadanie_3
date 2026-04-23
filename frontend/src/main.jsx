@@ -9,31 +9,33 @@ import HomePage from './pages/HomePage.jsx'
 import LobbyPage from './pages/LobbyPage.jsx'
 
 const router = createBrowserRouter([
-  {
-    element: <AppLayout />,
-    children: [
-      {
-        path: '/',
-        element: <HomePage />,
-        errorElement: <ErrorNotFound />,
-      },
-      {
-        path: '/lobby',
-        element: <LobbyPage />,
-        errorElement: <ErrorNotFound />,
-      },
-      {
-        path: '/game',
-        element: <GamePage />,
-        errorElement: <ErrorNotFound />,
-      },
-    ],
-  },
-  {
-    path: '*',
-    element: <ErrorNotFound />,
-  },
-])
+    {
+        element: <AppLayout />,
+        children: [
+            {
+                path: '/',
+                element: <HomePage />,
+                errorElement: <ErrorNotFound />,
+            },
+            {
+                path: '/lobby',
+                element: <LobbyPage />,
+                errorElement: <ErrorNotFound />,
+            },
+            {
+                path: '/game',
+                element: <GamePage />,
+                errorElement: <ErrorNotFound />,
+            },
+        ],
+    },
+    {
+        path: '*',
+        element: <ErrorNotFound />,
+    },
+], {
+    basename: '/zadanie3',
+})
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

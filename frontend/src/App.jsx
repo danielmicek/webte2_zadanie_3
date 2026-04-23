@@ -7,19 +7,13 @@ const WS_STATE = {
     CONNECTED: 'connected',
 }
 
-function getSocketUrl() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.hostname || 'localhost'
-    return `${protocol}//${host}:3000`
-}
-
 export function AppLayout() {
     const navigate = useNavigate()
     const location = useLocation()
     const socketRef = useRef(null)
     const manualCloseRef = useRef(false)
     const [socketState, setSocketState] = useState(WS_STATE.DISCONNECTED)
-    const [snapshot, setSnapshot] = useState(null)
+    const [snapshot, setSnapshot] = useState(null) // game state sent from the server
     const [shotEvent, setShotEvent] = useState(null)
     const [nicknameInput, setNicknameInput] = useState('')
     const [notice, setNotice] = useState('Zadaj meno a pripoj sa na WebSocket server.')
@@ -28,7 +22,6 @@ export function AppLayout() {
 
     const playerId = session?.playerId ?? null
     const nickname = session?.nickname ?? ''
-    const isGamePlayer = Boolean(playerId && snapshot?.game?.playersIds?.includes(playerId))
 
     function closeSocket() {
         if (socketRef.current) {
@@ -41,6 +34,7 @@ export function AppLayout() {
         }
     }
 
+    // when closing the page, disconnect the socket
     function disconnectForUnload() {
         const socket = socketRef.current
 
@@ -59,7 +53,7 @@ export function AppLayout() {
         manualCloseRef.current = false
         setSocketState(WS_STATE.CONNECTING)
 
-        const socket = new WebSocket(getSocketUrl())
+        const socket = new WebSocket("wss://node71.webte.fei.stuba.sk/ws/");
         socketRef.current = socket
 
         socket.onopen = () => {
@@ -124,11 +118,13 @@ export function AppLayout() {
             socketRef.current = null
             setSocketState(WS_STATE.DISCONNECTED)
 
+            // if the socket closing was manual, do nothing special
             if (manualCloseRef.current) {
                 manualCloseRef.current = false
                 return
             }
 
+            //if the socket was closed by accident (error), clear the session, snapshot, shot
             setSession(null)
             setSnapshot(null)
             setShotEvent(null)
@@ -136,6 +132,7 @@ export function AppLayout() {
         }
     }
 
+    // sendind message to backend
     function sendMessage(payload) {
         if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
             setNotice('Socket momentálne nie je otvorený.')
@@ -175,6 +172,7 @@ export function AppLayout() {
         navigate('/')
     }
 
+    // disconnect player when closing the page
     useEffect(() => {
         const handlePageHide = () => {
             disconnectForUnload()
@@ -198,7 +196,7 @@ export function AppLayout() {
             return
         }
 
-        if (snapshot?.game?.status && snapshot.game.status !== 'lobby' && isGamePlayer) {
+        if (snapshot?.game?.status && snapshot.game.status !== 'lobby') {
             if (location.pathname !== '/game') {
                 navigate('/game')
             }
@@ -208,7 +206,7 @@ export function AppLayout() {
         if (location.pathname !== '/lobby') {
             navigate('/lobby')
         }
-    }, [session, snapshot, isGamePlayer, navigate, location.pathname])
+    }, [session, snapshot, navigate, location.pathname])
 
     const pageContext = {
         snapshot,
@@ -221,7 +219,6 @@ export function AppLayout() {
         nicknameInput,
         setNicknameInput,
         connecting: socketState === WS_STATE.CONNECTING,
-        isGamePlayer,
         shotEvent,
         handleConnect,
         handleDisconnect,
