@@ -1,12 +1,18 @@
-import {useEffect, useRef, useState} from 'react'
+import {useEffect, useRef} from 'react'
 import Matter from 'matter-js'
-import {loadGameConfig} from './gameConfig.js'
 
 const VIEWPORT_PADDING = 20
 const PLAYER_COLORS = ['#ef4444', '#2563eb']
+const PHYSICS_TIMESTEP_MS = 1000 / 60
+const SNAP_THRESHOLD_PX = 18
+const POSITION_BLEND = 0.35
+const VELOCITY_BLEND = 0.35
 
-// its restricts the max power we can pull the arrow while shooting
 function clampMagnitude(dx, dy, maxDistance) {
+    if (!Number.isFinite(maxDistance) || maxDistance <= 0) {
+        return {dx, dy, distance: Math.hypot(dx, dy)}
+    }
+
     const distance = Math.hypot(dx, dy)
 
     if (!distance || distance <= maxDistance) {
@@ -52,31 +58,27 @@ function drawArrow(ctx, startX, startY, endX, endY) {
     ctx.fill()
 }
 
-function normalizeVector(vector) {
-    const x = Number(vector?.x)
-    const y = Number(vector?.y)
-
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        return null
-    }
-
-    return {x, y}
-}
-
 export default function GameCanvas({
     playerId,
     isMyTurn,
     canShoot,
-    game, // snapshot from the server
-    shotEvent,
+    game,
+    config,
+    shotStartedEvent,
+    physicsSnapshotEvent,
+    shotFinishedEvent,
     onShoot,
-    onSettled, // when all the stones stop
 }) {
     const canvasRef = useRef(null)
-    const animationFrameRef = useRef(null)
     const engineRef = useRef(null)
+    const animationFrameRef = useRef(null)
+    const lastFrameTimeRef = useRef(0)
+    const accumulatorRef = useRef(0)
     const stoneBodiesRef = useRef(new Map())
     const aimingRef = useRef(null)
+    const localShotIdRef = useRef(null)
+    const latestSeqRef = useRef(-1)
+    const currentShotRef = useRef(game?.currentShot ?? null)
     const dimensionsRef = useRef({
         logicalWidth: 1,
         logicalHeight: 1,
@@ -85,42 +87,9 @@ export default function GameCanvas({
         uniformScale: 1,
         pixelRatio: 1,
     })
-    const gameRef = useRef(game)
-    const reportedShotIdRef = useRef(null)
-    const appliedShotIdsRef = useRef(new Set())
-    const [config, setConfig] = useState(null)
-    const [loadError, setLoadError] = useState('')
 
-    gameRef.current = game
+    currentShotRef.current = game?.currentShot ?? null
 
-    // load game-config
-    useEffect(() => {
-        let cancelled = false
-
-        loadGameConfig()
-            .then((nextConfig) => {
-                if (cancelled) {
-                    return
-                }
-
-                setConfig(nextConfig)
-                setLoadError('')
-            })
-            .catch((error) => {
-                if (cancelled) {
-                    return
-                }
-
-                console.error(error)
-                setLoadError('Nepodarilo sa načítať konfiguráciu hry.')
-            })
-
-        return () => {
-            cancelled = true
-        }
-    }, [])
-
-    // physics for the matter.js
     useEffect(() => {
         if (!config || !game?.gameId) {
             return
@@ -132,16 +101,16 @@ export default function GameCanvas({
             enableSleeping: false,
         })
 
-        engine.positionIterations = 10 // for precise collisions
-        engine.velocityIterations = 8 // for quality of rebound after touching a wall
+        engine.positionIterations = 10
+        engine.velocityIterations = 8
         engine.constraintIterations = 2
         engineRef.current = engine
         stoneBodiesRef.current = new Map()
-        reportedShotIdRef.current = null
-        appliedShotIdsRef.current = new Set()
+        localShotIdRef.current = null
+        latestSeqRef.current = -1
+        accumulatorRef.current = 0
+        lastFrameTimeRef.current = 0
 
-        const wallThickness = 90
-        const {width, height} = config.board
         const wallOptions = {
             isStatic: true,
             restitution: config.wallRestitution,
@@ -152,24 +121,26 @@ export default function GameCanvas({
         }
 
         const walls = [
-            Bodies.rectangle(width / 2, -wallThickness / 2, width + wallThickness * 2, wallThickness, wallOptions),
-            Bodies.rectangle(width / 2, height + wallThickness / 2, width + wallThickness * 2, wallThickness, wallOptions),
-            Bodies.rectangle(-wallThickness / 2, height / 2, wallThickness, height + wallThickness * 2, wallOptions),
-            Bodies.rectangle(width + wallThickness / 2, height / 2, wallThickness, height + wallThickness * 2, wallOptions),
+            Bodies.rectangle(config.board.width / 2, -45, config.board.width + 180, 90, wallOptions),
+            Bodies.rectangle(config.board.width / 2, config.board.height + 45, config.board.width + 180, 90, wallOptions),
+            Bodies.rectangle(-45, config.board.height / 2, 90, config.board.height + 180, wallOptions),
+            Bodies.rectangle(config.board.width + 45, config.board.height / 2, 90, config.board.height + 180, wallOptions),
         ]
 
         Composite.add(engine.world, walls)
+        hardSyncBodies(game?.stones ?? [], config)
 
         return () => {
+            window.cancelAnimationFrame(animationFrameRef.current)
             Matter.World.clear(engine.world, false)
             Matter.Engine.clear(engine)
             engineRef.current = null
             stoneBodiesRef.current = new Map()
         }
-    }, [config, game?.gameId, playerId])
+    }, [config, game?.gameId])
 
     useEffect(() => {
-        if (!config || !engineRef.current) {
+        if (!config) {
             return
         }
 
@@ -183,6 +154,10 @@ export default function GameCanvas({
             const displayHeight = logicalHeight * uniformScale
             const pixelRatio = window.devicePixelRatio || 1
             const canvas = canvasRef.current
+
+            if (!canvas) {
+                return
+            }
 
             dimensionsRef.current = {
                 logicalWidth,
@@ -201,116 +176,275 @@ export default function GameCanvas({
             drawScene()
         }
 
-        let lastTime = 0
-        let settledFrames = 0
-
-        const animate = (timestamp) => {
-            if (!engineRef.current) { // delete physics after unmount
-                return
-            }
-
-            const delta = Math.min((timestamp - lastTime) / 1000 || 0.016, 0.05) // for moving the physics
-            lastTime = timestamp
-
-            const movingShot = Boolean(gameRef.current?.currentShot)
-            if (!gameRef.current?.paused && gameRef.current?.status === 'running') {
-                Matter.Engine.update(engineRef.current, delta * 1000) // move the stones -> animations
-                settleStoppedBodies(config) // stop moving the stones when they are too slow
-            }
-
-            const hasBodies = stoneBodiesRef.current.size > 0 // if some stones exists
-            const allStill = hasBodies && [...stoneBodiesRef.current.values()].every((body) => body.speed <= config.settleSpeed)
-
-            if (movingShot && allStill) {
-                settledFrames += 1 // increase if all the stones stopped
-            } else {
-                settledFrames = 0
-            }
-
-            if (
-                movingShot && // current shot
-                settledFrames >= config.settleFrames && // we set it for 24 frames, so it is not coinsidently sent that the stone is stopped when it is actually moving
-                gameRef.current?.currentShot?.shotId &&
-                reportedShotIdRef.current !== gameRef.current.currentShot.shotId // report not sent for this shot
-            ) {
-                const stones = serializeBodies()
-                reportedShotIdRef.current = gameRef.current.currentShot.shotId // save this shot as reported -> reported as stopped
-                onSettled(gameRef.current.currentShot.shotId, stones)
-            }
-
-            drawScene()
-            animationFrameRef.current = window.requestAnimationFrame(animate) // for next frame call animate()
-        }
-
-        resizeCanvas() // set the right size of the canvas
-        animationFrameRef.current = window.requestAnimationFrame(animate) // start the first frame of the animation
+        resizeCanvas()
         window.addEventListener('resize', resizeCanvas)
 
         return () => {
             window.removeEventListener('resize', resizeCanvas)
+        }
+    }, [config])
+
+    useEffect(() => {
+        if (!engineRef.current || !config) {
+            return
+        }
+
+        const animate = (timestamp) => {
+            if (!engineRef.current) {
+                return
+            }
+
+            if (!lastFrameTimeRef.current) {
+                lastFrameTimeRef.current = timestamp
+            }
+
+            const elapsed = Math.min(timestamp - lastFrameTimeRef.current, 50)
+            lastFrameTimeRef.current = timestamp
+            accumulatorRef.current += elapsed
+
+            while (accumulatorRef.current >= PHYSICS_TIMESTEP_MS) {
+                if (currentShotRef.current && !game?.paused) {
+                    Matter.Engine.update(engineRef.current, PHYSICS_TIMESTEP_MS)
+                    settleStoppedBodies(config)
+                }
+
+                accumulatorRef.current -= PHYSICS_TIMESTEP_MS
+            }
+
+            drawScene()
+            animationFrameRef.current = window.requestAnimationFrame(animate)
+        }
+
+        animationFrameRef.current = window.requestAnimationFrame(animate)
+
+        return () => {
             window.cancelAnimationFrame(animationFrameRef.current)
+            lastFrameTimeRef.current = 0
+            accumulatorRef.current = 0
         }
-    }, [config, onSettled])
+    }, [config, game?.paused])
 
-    // mainly when shotEvent changes -> when backend send it to client
     useEffect(() => {
-        if (!config || !engineRef.current || !shotEvent?.shotId) {
+        if (!config || !engineRef.current) {
             return
         }
 
-        // if this shot was already printed by physics
-        if (appliedShotIdsRef.current.has(shotEvent.shotId)) {
-            return
-        }
-
-        applyShotToEngine(shotEvent, config, engineRef.current)
-        appliedShotIdsRef.current.add(shotEvent.shotId)
-        reportedShotIdRef.current = null
-    }, [config, shotEvent])
-
-    useEffect(() => {
         if (game?.status === 'lobby' && game?.gameId === null) {
             aimingRef.current = null
         }
-    }, [game?.status, game?.gameId])
 
-    // this actually creates the STONE and the SHOT according to the data from backend
-    function applyShotToEngine(shot, loadedConfig, engine) {
-        const {Bodies, Body, Composite} = Matter
-        const vector = normalizeVector(shot.vector)
+        if (game?.currentShot && !localShotIdRef.current) {
+            localShotIdRef.current = game.currentShot.shotId
+            latestSeqRef.current = -1
+            hardSyncBodies(game?.stones ?? [], config)
+        }
 
-        if (!vector) {
+        if (!game?.currentShot) {
+            localShotIdRef.current = null
+            latestSeqRef.current = -1
+            hardSyncBodies(game?.stones ?? [], config)
+        }
+
+        drawScene()
+    }, [game, config])
+
+    useEffect(() => {
+        if (!config || !engineRef.current || !shotStartedEvent?.shotId || !shotStartedEvent?.shot) {
             return
         }
 
+        localShotIdRef.current = shotStartedEvent.shotId
+        currentShotRef.current = shotStartedEvent.shot
+        latestSeqRef.current = Number(shotStartedEvent.seq ?? 0)
+        hardSyncBodies(shotStartedEvent.stones ?? [], config)
+        spawnPredictedShot(shotStartedEvent.shot, config)
+        drawScene()
+    }, [shotStartedEvent, config])
+
+    useEffect(() => {
+        if (!config || !engineRef.current || !physicsSnapshotEvent?.shotId) {
+            return
+        }
+
+        if (localShotIdRef.current !== physicsSnapshotEvent.shotId) {
+            return
+        }
+
+        const seq = Number(physicsSnapshotEvent.seq ?? -1)
+        if (seq <= latestSeqRef.current) {
+            return
+        }
+
+        latestSeqRef.current = seq
+        reconcileBodies(physicsSnapshotEvent.stones ?? [], config)
+        drawScene()
+    }, [physicsSnapshotEvent, config])
+
+    useEffect(() => {
+        if (!config || !engineRef.current || !shotFinishedEvent?.shotId) {
+            return
+        }
+
+        const seq = Number(shotFinishedEvent.seq ?? -1)
+        if (
+            localShotIdRef.current === shotFinishedEvent.shotId &&
+            seq >= latestSeqRef.current
+        ) {
+            latestSeqRef.current = seq
+            hardSyncBodies(shotFinishedEvent.stones ?? [], config)
+            localShotIdRef.current = null
+            currentShotRef.current = null
+            drawScene()
+        }
+    }, [shotFinishedEvent, config])
+
+    function createStoneBody(stone, loadedConfig) {
+        const {Bodies} = Matter
         const body = Bodies.circle(
-            loadedConfig.launchPosition.x,
-            loadedConfig.launchPosition.y,
-            loadedConfig.stoneRadius,
+            Number(stone.x),
+            Number(stone.y),
+            Number(stone.radius) || loadedConfig.stoneRadius,
             {
-                restitution: loadedConfig.restitution, //bouncing power
-                friction: 0, // trenie
-                frictionStatic: 0, // trenie
-                frictionAir: loadedConfig.frictionAir, // slowing down dring movement
-                slop: 0, // accurate collisions
+                restitution: loadedConfig.restitution,
+                friction: 0,
+                frictionStatic: 0,
+                frictionAir: loadedConfig.frictionAir,
+                slop: 0,
                 inertia: Infinity,
-                label: shot.stoneId,
+                label: stone.id,
             },
         )
 
-        // save stone data
         body.plugin = {
-            stoneId: shot.stoneId,
-            ownerPlayerId: shot.playerId,
+            stoneId: stone.id,
+            ownerPlayerId: stone.ownerPlayerId,
         }
 
-        // composite for adding the stone to the world
-        Composite.add(engine.world, body)
+        Matter.Body.setVelocity(body, {
+            x: Number(stone.vx) || 0,
+            y: Number(stone.vy) || 0,
+        })
+
+        return body
+    }
+
+    function hardSyncBodies(stones, loadedConfig) {
+        if (!engineRef.current) {
+            return
+        }
+
+        const {Composite, World} = Matter
+        const world = engineRef.current.world
+        const nextIds = new Set(stones.map((stone) => stone.id))
+
+        for (const [stoneId, body] of stoneBodiesRef.current.entries()) {
+            if (!nextIds.has(stoneId)) {
+                World.remove(world, body)
+                stoneBodiesRef.current.delete(stoneId)
+            }
+        }
+
+        for (const stone of stones) {
+            const existing = stoneBodiesRef.current.get(stone.id)
+
+            if (!existing) {
+                const body = createStoneBody(stone, loadedConfig)
+                Composite.add(world, body)
+                stoneBodiesRef.current.set(stone.id, body)
+                continue
+            }
+
+            Matter.Body.setPosition(existing, {x: Number(stone.x), y: Number(stone.y)})
+            Matter.Body.setVelocity(existing, {
+                x: Number(stone.vx) || 0,
+                y: Number(stone.vy) || 0,
+            })
+            existing.plugin = {
+                stoneId: stone.id,
+                ownerPlayerId: stone.ownerPlayerId,
+            }
+        }
+    }
+
+    function reconcileBodies(stones, loadedConfig) {
+        if (!engineRef.current) {
+            return
+        }
+
+        const {Composite, World, Body} = Matter
+        const world = engineRef.current.world
+        const nextIds = new Set(stones.map((stone) => stone.id))
+
+        for (const [stoneId, body] of stoneBodiesRef.current.entries()) {
+            if (!nextIds.has(stoneId)) {
+                World.remove(world, body)
+                stoneBodiesRef.current.delete(stoneId)
+            }
+        }
+
+        for (const stone of stones) {
+            const targetX = Number(stone.x)
+            const targetY = Number(stone.y)
+            const targetVx = Number(stone.vx) || 0
+            const targetVy = Number(stone.vy) || 0
+            const existing = stoneBodiesRef.current.get(stone.id)
+
+            if (!existing) {
+                const body = createStoneBody(stone, loadedConfig)
+                Composite.add(world, body)
+                stoneBodiesRef.current.set(stone.id, body)
+                continue
+            }
+
+            existing.plugin = {
+                stoneId: stone.id,
+                ownerPlayerId: stone.ownerPlayerId,
+            }
+
+            const dx = targetX - existing.position.x
+            const dy = targetY - existing.position.y
+            const distance = Math.hypot(dx, dy)
+
+            if (distance > SNAP_THRESHOLD_PX) {
+                Body.setPosition(existing, {x: targetX, y: targetY})
+                Body.setVelocity(existing, {x: targetVx, y: targetVy})
+                continue
+            }
+
+            Body.setPosition(existing, {
+                x: existing.position.x + dx * POSITION_BLEND,
+                y: existing.position.y + dy * POSITION_BLEND,
+            })
+            Body.setVelocity(existing, {
+                x: existing.velocity.x + (targetVx - existing.velocity.x) * VELOCITY_BLEND,
+                y: existing.velocity.y + (targetVy - existing.velocity.y) * VELOCITY_BLEND,
+            })
+        }
+    }
+
+    function spawnPredictedShot(shot, loadedConfig) {
+        if (!engineRef.current) {
+            return
+        }
+
+        const {Body, Composite} = Matter
+        const predictedStone = {
+            id: shot.stoneId,
+            ownerPlayerId: shot.playerId,
+            x: loadedConfig.launchPosition.x,
+            y: loadedConfig.launchPosition.y,
+            vx: 0,
+            vy: 0,
+            radius: loadedConfig.stoneRadius,
+        }
+
+        const body = createStoneBody(predictedStone, loadedConfig)
+        Composite.add(engineRef.current.world, body)
         stoneBodiesRef.current.set(shot.stoneId, body)
 
         Body.applyForce(body, body.position, {
-            x: vector.x * loadedConfig.shotPower,
-            y: vector.y * loadedConfig.shotPower,
+            x: Number(shot.vector?.x || 0) * loadedConfig.shotPower,
+            y: Number(shot.vector?.y || 0) * loadedConfig.shotPower,
         })
     }
 
@@ -319,33 +453,21 @@ export default function GameCanvas({
 
         for (const body of stoneBodiesRef.current.values()) {
             if (body.speed <= loadedConfig.settleSpeed) {
-                Body.setVelocity(body, {x: 0, y: 0}) // stop moving the stone in x and y direction
-                Body.setAngularVelocity(body, 0) // stop rotating the stone
+                Body.setVelocity(body, {x: 0, y: 0})
+                Body.setAngularVelocity(body, 0)
             }
         }
     }
 
-    function serializeBodies() {
-        return [...stoneBodiesRef.current.values()].map((body) => ({
-            id: body.plugin?.stoneId ?? body.label,
-            ownerPlayerId: Number(body.plugin?.ownerPlayerId),
-            x: Number(body.position.x.toFixed(3)),
-            y: Number(body.position.y.toFixed(3)),
-            vx: Number(body.velocity.x.toFixed(4)),
-            vy: Number(body.velocity.y.toFixed(4)),
-            radius: Number(body.circleRadius?.toFixed(3) || config?.stoneRadius || 0),
-        }))
-    }
-
     function toLogicalPoint(event) {
         const canvas = canvasRef.current
-        const rect = canvas.getBoundingClientRect() // location and size of the canvas
+        const rect = canvas.getBoundingClientRect()
         const {logicalWidth, logicalHeight, uniformScale} = dimensionsRef.current
         const localX = event.clientX - rect.left
         const localY = event.clientY - rect.top
 
         return {
-            x: localX / uniformScale, // change it according to the size of the screen
+            x: localX / uniformScale,
             y: localY / uniformScale,
             insideBoard:
                 localX >= 0 &&
@@ -363,6 +485,7 @@ export default function GameCanvas({
 
         const ctx = canvas.getContext('2d')
         const {logicalWidth, logicalHeight, uniformScale, pixelRatio} = dimensionsRef.current
+        const maxPullDistance = Number.isFinite(config.maxPullDistance) ? config.maxPullDistance : 190
 
         ctx.setTransform(1, 0, 0, 1, 0, 0)
         ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -393,7 +516,7 @@ export default function GameCanvas({
         ctx.stroke()
 
         if (canShoot) {
-            const meIndex = game.playersIds.indexOf(playerId)
+            const meIndex = game?.playersIds?.indexOf(playerId) ?? -1
             drawCircle(
                 ctx,
                 config.launchPosition.x,
@@ -416,7 +539,7 @@ export default function GameCanvas({
         }
 
         for (const body of stoneBodiesRef.current.values()) {
-            const ownerIndex = game.playersIds.indexOf(body.plugin?.ownerPlayerId)
+            const ownerIndex = game?.playersIds?.indexOf(body.plugin?.ownerPlayerId) ?? -1
             drawCircle(ctx, body.position.x, body.position.y, body.circleRadius, PLAYER_COLORS[ownerIndex] ?? '#94a3b8')
             drawCircle(ctx, body.position.x, body.position.y, body.circleRadius * 0.42, 'rgba(255,255,255,0.85)')
 
@@ -427,12 +550,11 @@ export default function GameCanvas({
             ctx.stroke()
         }
 
-        // drawing the slingshot effect
         if (aimingRef.current) {
             const clamped = clampMagnitude(
                 aimingRef.current.pointerX - config.launchPosition.x,
                 aimingRef.current.pointerY - config.launchPosition.y,
-                config.maxPullDistance,
+                maxPullDistance,
             )
             const shotEndX = config.launchPosition.x - clamped.dx
             const shotEndY = config.launchPosition.y - clamped.dy
@@ -450,7 +572,7 @@ export default function GameCanvas({
             drawArrow(ctx, config.launchPosition.x, config.launchPosition.y, shotEndX, shotEndY)
 
             ctx.beginPath()
-            ctx.arc(config.launchPosition.x, config.launchPosition.y, config.maxPullDistance, 0, Math.PI * 2)
+            ctx.arc(config.launchPosition.x, config.launchPosition.y, maxPullDistance, 0, Math.PI * 2)
             ctx.strokeStyle = 'rgba(245, 158, 11, 0.18)'
             ctx.lineWidth = 2
             ctx.stroke()
@@ -459,19 +581,16 @@ export default function GameCanvas({
         ctx.setTransform(1, 0, 0, 1, 0, 0)
     }
 
-    // if the user clicks on the stone
-    // this is called whenever i click the canvas
     function handlePointerDown(event) {
         if (!config || !isMyTurn || !canShoot) {
             return
         }
 
-        const pointer = toLogicalPoint(event) // ked the position of the cursor
+        const pointer = toLogicalPoint(event)
         if (!pointer.insideBoard) {
             return
         }
 
-        // if the click is actually on the stone or out of its range
         const distance = Math.hypot(pointer.x - config.launchPosition.x, pointer.y - config.launchPosition.y)
         if (distance > config.stoneRadius) {
             return
@@ -482,10 +601,10 @@ export default function GameCanvas({
             pointerY: pointer.y,
         }
 
+        drawScene()
         event.currentTarget.setPointerCapture(event.pointerId)
     }
 
-    // this is called whenever i move with the cursor over the canvas
     function handlePointerMove(event) {
         if (!aimingRef.current) {
             return
@@ -496,9 +615,10 @@ export default function GameCanvas({
             pointerX: pointer.x,
             pointerY: pointer.y,
         }
+
+        drawScene()
     }
 
-    // if the user release the stone
     function handlePointerUp(event) {
         if (!aimingRef.current || !config) {
             return
@@ -508,7 +628,7 @@ export default function GameCanvas({
         const clamped = clampMagnitude(
             pointer.x - config.launchPosition.x,
             pointer.y - config.launchPosition.y,
-            config.maxPullDistance,
+            Number.isFinite(config.maxPullDistance) ? config.maxPullDistance : 190,
         )
 
         aimingRef.current = null
@@ -520,25 +640,27 @@ export default function GameCanvas({
             })
         }
 
+        drawScene()
+
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId)
         }
     }
 
-    // this is called whenever i release the click on the canvas
     function handlePointerCancel(event) {
         aimingRef.current = null
+        drawScene()
 
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId)
         }
     }
 
-    if (loadError) {
+    if (!config) {
         return (
             <div className="flex items-center justify-center p-4">
-                <div className="rounded-lg border border-red-400/50 bg-red-950/60 px-6 py-4 text-sm text-red-100">
-                    {loadError}
+                <div className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-6 py-4 text-sm text-slate-200">
+                    Načítava sa herná plocha...
                 </div>
             </div>
         )

@@ -13,12 +13,14 @@ export function AppLayout() {
     const socketRef = useRef(null)
     const manualCloseRef = useRef(false)
     const [socketState, setSocketState] = useState(WS_STATE.DISCONNECTED)
-    const [snapshot, setSnapshot] = useState(null) // game state sent from the server
-    const [shotEvent, setShotEvent] = useState(null)
+    const [snapshot, setSnapshot] = useState(null)
     const [nicknameInput, setNicknameInput] = useState('')
     const [notice, setNotice] = useState('Zadaj meno a pripoj sa na WebSocket server.')
     const [showRules, setShowRules] = useState(false)
     const [session, setSession] = useState(null)
+    const [shotStartedEvent, setShotStartedEvent] = useState(null)
+    const [physicsSnapshotEvent, setPhysicsSnapshotEvent] = useState(null)
+    const [shotFinishedEvent, setShotFinishedEvent] = useState(null)
 
     const playerId = session?.playerId ?? null
     const nickname = session?.nickname ?? ''
@@ -34,7 +36,6 @@ export function AppLayout() {
         }
     }
 
-    // when closing the page, disconnect the socket
     function disconnectForUnload() {
         const socket = socketRef.current
 
@@ -53,7 +54,7 @@ export function AppLayout() {
         manualCloseRef.current = false
         setSocketState(WS_STATE.CONNECTING)
 
-        const socket = new WebSocket("wss://node71.webte.fei.stuba.sk/ws/");
+        const socket = new WebSocket('wss://node71.webte.fei.stuba.sk/ws/')
         socketRef.current = socket
 
         socket.onopen = () => {
@@ -74,7 +75,7 @@ export function AppLayout() {
                     typeof event.data === 'string'
                         ? event.data.slice(0, 120)
                         : '[non-text websocket frame]'
-                setNotice(`Server poslal nevalidnú odpoveď. Na WS porte pravdepodobne beží iný server. Odpoveď: ${preview}`)
+                setNotice(`Server poslal nevalidnĂş odpoveÄŹ. Na WS porte pravdepodobne beĹľĂ­ inĂ˝ server. OdpoveÄŹ: ${preview}`)
                 return
             }
 
@@ -86,7 +87,7 @@ export function AppLayout() {
 
                 setSession(nextSession)
                 setNicknameInput(message.nickname ?? '')
-                setNotice(`Prihlásený hráč: ${message.nickname}.`)
+                setNotice(`PrihlĂˇsenĂ˝ hrĂˇÄŤ: ${message.nickname}.`)
                 return
             }
 
@@ -95,8 +96,18 @@ export function AppLayout() {
                 return
             }
 
-            if (message.type === 'shot_fired') {
-                setShotEvent(message.shot)
+            if (message.type === 'shot_started') {
+                setShotStartedEvent(message)
+                return
+            }
+
+            if (message.type === 'physics_snapshot') {
+                setPhysicsSnapshotEvent(message)
+                return
+            }
+
+            if (message.type === 'shot_finished') {
+                setShotFinishedEvent(message)
                 return
             }
 
@@ -106,7 +117,7 @@ export function AppLayout() {
             }
 
             if (message.type === 'error') {
-                setNotice(message.message ?? 'Server vrátil chybu.')
+                setNotice(message.message ?? 'Server vrĂˇtil chybu.')
             }
         }
 
@@ -118,24 +129,23 @@ export function AppLayout() {
             socketRef.current = null
             setSocketState(WS_STATE.DISCONNECTED)
 
-            // if the socket closing was manual, do nothing special
             if (manualCloseRef.current) {
                 manualCloseRef.current = false
                 return
             }
 
-            //if the socket was closed by accident (error), clear the session, snapshot, shot
             setSession(null)
             setSnapshot(null)
-            setShotEvent(null)
-            setNotice('Spojenie bolo ukončené.')
+            setShotStartedEvent(null)
+            setPhysicsSnapshotEvent(null)
+            setShotFinishedEvent(null)
+            setNotice('Spojenie bolo ukonÄŤenĂ©.')
         }
     }
 
-    // sendind message to backend
     function sendMessage(payload) {
         if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-            setNotice('Socket momentálne nie je otvorený.')
+            setNotice('Socket momentĂˇlne nie je otvorenĂ˝.')
             return false
         }
 
@@ -143,10 +153,16 @@ export function AppLayout() {
         return true
     }
 
+    function resetTransientEvents() {
+        setShotStartedEvent(null)
+        setPhysicsSnapshotEvent(null)
+        setShotFinishedEvent(null)
+    }
+
     function handleConnect() {
         const trimmed = nicknameInput.trim()
         if (!trimmed) {
-            setNotice('Zadaj meno hráča.')
+            setNotice('Zadaj meno hrĂˇÄŤa.')
             return
         }
 
@@ -156,9 +172,9 @@ export function AppLayout() {
 
         setSession(null)
         setSnapshot(null)
-        setShotEvent(null)
+        resetTransientEvents()
         connectSocket({ nicknameToJoin: trimmed })
-        setNotice('Pripájanie na server...')
+        setNotice('PripĂˇjanie na server...')
     }
 
     function handleDisconnect() {
@@ -167,12 +183,11 @@ export function AppLayout() {
         closeSocket()
         setSession(null)
         setSnapshot(null)
-        setShotEvent(null)
-        setNotice('Spojenie bolo ukončené.')
+        resetTransientEvents()
+        setNotice('Spojenie bolo ukonÄŤenĂ©.')
         navigate('/')
     }
 
-    // disconnect player when closing the page
     useEffect(() => {
         const handlePageHide = () => {
             disconnectForUnload()
@@ -219,12 +234,13 @@ export function AppLayout() {
         nicknameInput,
         setNicknameInput,
         connecting: socketState === WS_STATE.CONNECTING,
-        shotEvent,
+        shotStartedEvent,
+        physicsSnapshotEvent,
+        shotFinishedEvent,
         handleConnect,
         handleDisconnect,
         sendMessage,
     }
 
     return <Outlet context={pageContext} />
-
 }

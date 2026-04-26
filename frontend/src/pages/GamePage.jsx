@@ -6,7 +6,16 @@ import ResultPanel from '../components/ResultPanel.jsx'
 
 export default function GamePage() {
     const context = useOutletContext()
-    const { snapshot, playerId, notice, shotEvent, sendMessage, handleDisconnect } = context
+    const {
+        snapshot,
+        playerId,
+        notice,
+        sendMessage,
+        handleDisconnect,
+        shotStartedEvent,
+        physicsSnapshotEvent,
+        shotFinishedEvent,
+    } = context
 
     if (!playerId) {
         return <Navigate to="/" replace />
@@ -38,9 +47,11 @@ export default function GamePage() {
                         isMyTurn={isMyTurn}
                         canShoot={canShoot}
                         game={game}
-                        shotEvent={shotEvent}
+                        config={snapshot?.config ?? null}
+                        shotStartedEvent={shotStartedEvent}
+                        physicsSnapshotEvent={physicsSnapshotEvent}
+                        shotFinishedEvent={shotFinishedEvent}
                         onShoot={(vector) => sendMessage({ type: 'shoot', vector })}
-                        onSettled={(shotId, stones) => sendMessage({ type: 'shot_settled', shotId, stones })}
                     />
                 </div>
             </div>
