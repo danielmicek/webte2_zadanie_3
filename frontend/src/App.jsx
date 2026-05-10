@@ -1,165 +1,246 @@
-import {createRoot} from 'react-dom/client'
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from 'react'
+import {Outlet, useLocation, useNavigate} from 'react-router-dom'
 
-const NAV_ICONS = [I.Home, I.Terminal, I.Activity, I.CircleDot, I.Scroll, I.Bar, I.Book, I.File];
-
-function Sidebar({ tt, lang, page, goto }) {
-  return (
-    <aside className="w-[260px] shrink-0 border-r border-line bg-pane/40 sticky top-0 h-screen flex flex-col">
-      {/* logo */}
-      <div className="px-5 pt-6 pb-5 border-b border-line">
-        <div className="flex items-center gap-3">
-          <div className="relative w-10 h-10 grid place-items-center bg-amber text-ink">
-            <span className="font-serif wonk text-[20px] leading-none">W²</span>
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-cyan"/>
-          </div>
-          <div>
-            <div className="font-serif text-[22px] leading-none">WEBTE<span className="text-amber wonk">²</span></div>
-            <div className="tracker mt-1">CONTROL · CONSOLE</div>
-          </div>
-        </div>
-      </div>
-
-      {/* nav */}
-      <nav className="flex-1 py-2">
-        {tt.nav.map((n, i) => {
-          const Icon = NAV_ICONS[i];
-          const a = page === n.id;
-          return (
-            <button key={n.id} onClick={() => goto(n.id)}
-              className={cls(
-                "relative w-full grid grid-cols-[44px_1fr_auto] items-center gap-2 h-11 px-3 text-left",
-                a ? "bg-pane2 text-bone" : "text-bone2/80 hover:text-bone hover:bg-pane2/50"
-              )}>
-              {a && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-amber"/>}
-              <span className={cls("grid place-items-center w-9 h-9 border", a ? "border-amber/60 text-amber" : "border-line2 text-bone2")}>
-                <Icon size={16}/>
-              </span>
-              <span className="text-[13.5px]">{n.label}</span>
-              <span className={cls("font-mono text-[10.5px]", a ? "text-amber" : "text-mute")}>{n.hint}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* status */}
-      <div className="px-4 py-4 border-t border-line space-y-2.5 font-mono text-[10.5px]">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-2 text-bone2"><span className="w-1.5 h-1.5 bg-cyan pulse-cyan"/>{tt.octaveOnline}</span>
-          <span className="text-mute2">9.2.0</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-2 text-bone2"><span className="w-1.5 h-1.5 bg-amber pulse-amber"/>{tt.apiKeyOK}</span>
-          <span className="text-mute2">200</span>
-        </div>
-        <div className="border-t border-line pt-2.5">
-          <div className="flex justify-between"><span className="tracker">{tt.tokenLbl}</span><span className="text-bone2">sk_…d901</span></div>
-          <div className="flex justify-between mt-1"><span className="tracker">{tt.sessionLbl}</span><span className="text-bone2">7f3e..a912</span></div>
-        </div>
-      </div>
-    </aside>
-  );
+const WS_STATE = {
+    DISCONNECTED: 'disconnected',
+    CONNECTING: 'connecting',
+    CONNECTED: 'connected',
 }
 
-function Topbar({ tt, lang, setLang, page }) {
-  const navItem = tt.nav.find(n => n.id === page) || tt.nav[0];
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const hh = String(now.getHours()).padStart(2,"0");
-  const mm = String(now.getMinutes()).padStart(2,"0");
-  const ss = String(now.getSeconds()).padStart(2,"0");
+export function AppLayout() {
+    const navigate = useNavigate()
+    const location = useLocation()
+    const socketRef = useRef(null)
+    const manualCloseRef = useRef(false)
+    const [socketState, setSocketState] = useState(WS_STATE.DISCONNECTED)
+    const [snapshot, setSnapshot] = useState(null)
+    const [nicknameInput, setNicknameInput] = useState('')
+    const [notice, setNotice] = useState('Zadaj meno a pripoj sa na WebSocket server.')
+    const [showRules, setShowRules] = useState(false)
+    const [session, setSession] = useState(null)
+    const [shotStartedEvent, setShotStartedEvent] = useState(null)
+    const [physicsSnapshotEvent, setPhysicsSnapshotEvent] = useState(null)
+    const [shotFinishedEvent, setShotFinishedEvent] = useState(null)
 
-  return (
-    <header className="sticky top-0 z-10 h-14 bg-ink/85 backdrop-blur border-b border-line">
-      <div className="h-full px-6 flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="font-mono text-[11.5px] text-mute2 uppercase tracking-[.14em] truncate">
-            <span className="text-bone2">WEBTE²</span>
-            <span className="mx-2 text-mute">/</span>
-            <span className="text-amber">{navItem.hint}</span>
-            <span className="mx-2 text-mute">/</span>
-            <span className="text-bone">{navItem.label}</span>
-          </div>
-        </div>
+    const playerId = session?.playerId ?? null
+    const nickname = session?.nickname ?? ''
 
-        <div className="flex items-center gap-3">
-          <Toggle value={lang} onChange={setLang} items={[{value:"sk",label:"SK"},{value:"en",label:"EN"}]}/>
-          <span className="hidden md:flex items-center gap-2 font-mono text-[11px] text-bone2">
-            <Badge tone="solidC">200</Badge>
-            <span className="text-mute2">·</span>
-            <span className="tabular-nums">{hh}:{mm}<span className="text-mute2">:{ss}</span></span>
-          </span>
-          <span className="hidden lg:flex items-center gap-1.5 text-bone2">
-            <I.Clock size={14} className="text-mute2"/>
-            <span className="font-mono text-[11px]">UTC+02</span>
-          </span>
-        </div>
-      </div>
-    </header>
-  );
+    function closeSocket() {
+        if (socketRef.current) {
+            socketRef.current.onopen = null
+            socketRef.current.onmessage = null
+            socketRef.current.onerror = null
+            socketRef.current.onclose = null
+            socketRef.current.close()
+            socketRef.current = null
+        }
+    }
+
+    function disconnectForUnload() {
+        const socket = socketRef.current
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            return
+        }
+
+        try {
+            socket.send(JSON.stringify({ type: 'disconnect' }))
+        } catch {
+            return
+        }
+    }
+
+    function connectSocket({ nicknameToJoin = '' } = {}) {
+        manualCloseRef.current = false
+        setSocketState(WS_STATE.CONNECTING)
+
+        const socket = new WebSocket('wss://node71.webte.fei.stuba.sk/ws/')
+        socketRef.current = socket
+
+        socket.onopen = () => {
+            setSocketState(WS_STATE.CONNECTED)
+
+            if (nicknameToJoin) {
+                socket.send(JSON.stringify({ type: 'join_lobby', nickname: nicknameToJoin }))
+            }
+        }
+
+        socket.onmessage = (event) => {
+            let message
+
+            try {
+                message = JSON.parse(event.data)
+            } catch {
+                const preview =
+                    typeof event.data === 'string'
+                        ? event.data.slice(0, 120)
+                        : '[non-text websocket frame]'
+                setNotice(`Server poslal nevalidnĂş odpoveÄŹ. Na WS porte pravdepodobne beĹľĂ­ inĂ˝ server. OdpoveÄŹ: ${preview}`)
+                return
+            }
+
+            if (message.type === 'session_ready') {
+                const nextSession = {
+                    playerId: message.playerId,
+                    nickname: message.nickname,
+                }
+
+                setSession(nextSession)
+                setNicknameInput(message.nickname ?? '')
+                setNotice(`PrihlĂˇsenĂ˝ hrĂˇÄŤ: ${message.nickname}.`)
+                return
+            }
+
+            if (message.type === 'snapshot') {
+                setSnapshot(message)
+                return
+            }
+
+            if (message.type === 'shot_started') {
+                setShotStartedEvent(message)
+                return
+            }
+
+            if (message.type === 'physics_snapshot') {
+                setPhysicsSnapshotEvent(message)
+                return
+            }
+
+            if (message.type === 'shot_finished') {
+                setShotFinishedEvent(message)
+                return
+            }
+
+            if (message.type === 'notice') {
+                setNotice(message.message)
+                return
+            }
+
+            if (message.type === 'error') {
+                setNotice(message.message ?? 'Server vrĂˇtil chybu.')
+            }
+        }
+
+        socket.onerror = () => {
+            setNotice('Spojenie so serverom zlyhalo.')
+        }
+
+        socket.onclose = () => {
+            socketRef.current = null
+            setSocketState(WS_STATE.DISCONNECTED)
+
+            if (manualCloseRef.current) {
+                manualCloseRef.current = false
+                return
+            }
+
+            setSession(null)
+            setSnapshot(null)
+            setShotStartedEvent(null)
+            setPhysicsSnapshotEvent(null)
+            setShotFinishedEvent(null)
+            setNotice('Spojenie bolo ukonÄŤenĂ©.')
+        }
+    }
+
+    function sendMessage(payload) {
+        if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+            setNotice('Socket momentĂˇlne nie je otvorenĂ˝.')
+            return false
+        }
+
+        socketRef.current.send(JSON.stringify(payload))
+        return true
+    }
+
+    function resetTransientEvents() {
+        setShotStartedEvent(null)
+        setPhysicsSnapshotEvent(null)
+        setShotFinishedEvent(null)
+    }
+
+    function handleConnect() {
+        const trimmed = nicknameInput.trim()
+        if (!trimmed) {
+            setNotice('Zadaj meno hrĂˇÄŤa.')
+            return
+        }
+
+        if (socketRef.current) {
+            closeSocket()
+        }
+
+        setSession(null)
+        setSnapshot(null)
+        resetTransientEvents()
+        connectSocket({ nicknameToJoin: trimmed })
+        setNotice('PripĂˇjanie na server...')
+    }
+
+    function handleDisconnect() {
+        manualCloseRef.current = true
+        sendMessage({ type: 'disconnect' })
+        closeSocket()
+        setSession(null)
+        setSnapshot(null)
+        resetTransientEvents()
+        setNotice('Spojenie bolo ukonÄŤenĂ©.')
+        navigate('/')
+    }
+
+    useEffect(() => {
+        const handlePageHide = () => {
+            disconnectForUnload()
+        }
+
+        window.addEventListener('pagehide', handlePageHide)
+
+        return () => {
+            manualCloseRef.current = true
+            disconnectForUnload()
+            closeSocket()
+            window.removeEventListener('pagehide', handlePageHide)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (!session?.playerId) {
+            if (location.pathname !== '/') {
+                navigate('/')
+            }
+            return
+        }
+
+        if (snapshot?.game?.status && snapshot.game.status !== 'lobby') {
+            if (location.pathname !== '/game') {
+                navigate('/game')
+            }
+            return
+        }
+
+        if (location.pathname !== '/lobby') {
+            navigate('/lobby')
+        }
+    }, [session, snapshot, navigate, location.pathname])
+
+    const pageContext = {
+        snapshot,
+        playerId,
+        nickname,
+        socketState,
+        notice,
+        showRules,
+        setShowRules,
+        nicknameInput,
+        setNicknameInput,
+        connecting: socketState === WS_STATE.CONNECTING,
+        shotStartedEvent,
+        physicsSnapshotEvent,
+        shotFinishedEvent,
+        handleConnect,
+        handleDisconnect,
+        sendMessage,
+    }
+
+    return <Outlet context={pageContext} />
 }
-
-function Footer() {
-  return (
-    <footer className="border-t border-line mt-14">
-      <div className="max-w-[1400px] mx-auto px-8 py-6 flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          {[
-            "PostgreSQL 16",
-            "Octave 9.2",
-            "Docker · sandbox",
-            "Node 22 · Express",
-            "OpenAPI 3.1",
-          ].map(s => (
-            <span key={s} className="inline-flex items-center h-7 px-2.5 border border-line2 font-mono text-[10.5px] text-bone2 uppercase tracking-[.14em]">{s}</span>
-          ))}
-        </div>
-        <div className="font-mono text-[10.5px] text-mute2 uppercase tracking-[.14em] flex items-center gap-3">
-          <span>FEI STU · Bratislava</span>
-          <span className="text-mute">·</span>
-          <span>WEBTE² / 2025</span>
-          <span className="text-mute">·</span>
-          <span className="text-bone2">build d901·main</span>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-function App() {
-  const [lang, setLang] = useState("sk");
-  const [page, setPage] = useState("home");
-  const tt = T[lang];
-
-  const PAGES = {
-    home: PageHome,
-    console: PageConsole,
-    pend: PagePendulum,
-    ball: PageBall,
-    logs: PageLogs,
-    stats: PageStats,
-    api: PageApi,
-    manual: PageManual,
-  };
-  const Page = PAGES[page] || PageHome;
-
-  return (
-    <div className="min-h-screen flex bg-ink">
-      <Sidebar tt={tt} lang={lang} page={page} goto={setPage}/>
-      <div className="flex-1 min-w-0 flex flex-col">
-        <Topbar tt={tt} lang={lang} setLang={setLang} page={page}/>
-        <main className="flex-1">
-          <div className="max-w-[1400px] mx-auto px-8 py-10">
-            <Page key={page+lang} tt={tt} lang={lang} goto={setPage}/>
-          </div>
-        </main>
-        <Footer/>
-      </div>
-    </div>
-  );
-}
-
-createRoot(document.getElementById("root")).render(<App/>);
